@@ -1,0 +1,21 @@
+# Xcode / build
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Secrets — local API key for the probe CLI
+.reclaim-token
+.env
+
+# macOS
+.DS_Store
+
+# Swift Package Manager (if added later)
+.build/
+.swiftpm/
+Packages/
+
+# Added by ggshield
+.cache_ggshield
