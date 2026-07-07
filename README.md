@@ -27,6 +27,7 @@ Built with SwiftUI (macOS 14+), talking directly to the Reclaim REST API.
 - **Single-task edit** sheet (title, notes, priority, due date, duration) — double-click a row or use the context menu.
 - **Right-click context menu** mirroring the bulk actions.
 - **Secure key storage** — your Reclaim API key lives in the macOS Keychain, never in a plaintext file.
+- **Siri, Spotlight & Shortcuts** — add tasks by voice ("Hey Siri, add a task to Reclaim Desktop" → it asks what), from Spotlight, or in the Shortcuts app, via an App Intent (`AddReclaimTaskIntent`) with optional priority / duration / due date.
 
 ## Getting your API key
 
@@ -54,6 +55,22 @@ developer account is required for local use. The app is sandboxed with only the
 xcodebuild -project ReclaimDesktop.xcodeproj -target ReclaimDesktop \
   -configuration Debug build CODE_SIGNING_ALLOWED=NO
 ```
+
+## Siri & Shortcuts
+
+The app registers an **App Intent** (`AddReclaimTaskIntent`) via `AppShortcutsProvider`,
+so after launching the app once you can:
+
+- **Siri:** "Hey Siri, add a task to Reclaim Desktop" → Siri asks "What's the task?"
+  → dictate it. (Free-form titles can't be captured inline in one phrase — that's
+  an App Shortcuts limitation, not a bug — so Siri prompts for the text.)
+- **Spotlight:** type "Add Reclaim Task".
+- **Shortcuts app:** find "Add Reclaim Task" under the app to build automations,
+  set custom phrases, or pass dictated text for a one-shot voice command.
+
+No Siri entitlement or paid developer account is required — App Intents expose to
+Siri/Spotlight automatically. The intent reads your key from the Keychain, so the
+app must be connected first.
 
 ## Testing the API (reclaim-probe)
 

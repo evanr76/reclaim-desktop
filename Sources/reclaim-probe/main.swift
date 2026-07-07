@@ -55,6 +55,7 @@ guard let command = args.first else {
       dump-user                      Raw JSON of /api/users/current
       dump-tasks                     Raw JSON of the task-list request
       raw <path>                     Raw GET of an arbitrary path
+      create <title> [P#] [hours]    Create a task (needs RECLAIM_PROBE_ALLOW_WRITES=1)
       complete <id> [<id>...]        Bulk complete (needs RECLAIM_PROBE_ALLOW_WRITES=1)
       priority <P#> <id> [<id>...]   Bulk set priority (needs writes flag)
       delete <id> [<id>...]          Bulk delete (needs writes flag)
@@ -160,6 +161,14 @@ do {
         let body = args.count > 3 ? args[3].data(using: .utf8) : nil
         let (status, resp) = try await client.rawRequest(method: method, path: args[2], query: nil, body: body)
         print("HTTP \(status)\n\(prettyJSON(resp))")
+
+    case "create":
+        requireWrites()
+        guard args.count > 1 else { fail("Usage: create <title> [P1|P2|P3|P4] [hours]") }
+        let pr = args.count > 2 ? (Priority(rawValue: args[2].uppercased()) ?? .p3) : .p3
+        let hrs = args.count > 3 ? (Double(args[3]) ?? 1) : 1
+        let t = try await client.createTask(title: args[1], priority: pr, durationHours: hrs)
+        print("Created task \(t.id): \(t.displayTitle) [\(pr.short), \(hrs)h]")
 
     case "complete":
         requireWrites()

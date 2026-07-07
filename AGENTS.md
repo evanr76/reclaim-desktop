@@ -75,19 +75,16 @@ codesign --force --sign - \
 
 ### Install to /Applications + Dock
 
-Not automated in the project; done ad hoc:
+Use `scripts/install.sh` — it builds Release, installs to `/Applications`,
+ad-hoc signs, refreshes the icon, and relaunches. Ad-hoc signed
+(`Signature=adhoc`, no team) — fine for personal local use.
 
-```bash
-xcodebuild -project ReclaimDesktop.xcodeproj -target ReclaimDesktop \
-  -configuration Release build CODE_SIGNING_ALLOWED=NO
-rm -rf /Applications/ReclaimDesktop.app
-cp -R build/Release/ReclaimDesktop.app /Applications/
-codesign --force --deep --sign - \
-  --entitlements ReclaimDesktop/ReclaimDesktop.entitlements /Applications/ReclaimDesktop.app
-# add to Dock (skip if already present), then: killall Dock
-```
-
-Ad-hoc signed (`Signature=adhoc`, no team) — fine for personal local use.
+**Do NOT `killall Dock` in install automation.** Restarting the Dock
+un-minimizes every minimized window on macOS (a surprising, annoying side
+effect — it once popped up all of a user's minimized Chrome windows on each
+reinstall). The script refreshes the icon via LaunchServices + the
+icon-services cache instead. Adding a Dock tile the first time does require a
+Dock restart, so do that once, manually, when convenient — not on every build.
 
 The `.xcodeproj` uses a **file-system-synchronized group** (`objectVersion 77`),
 so new files added under `ReclaimDesktop/` are picked up automatically — no
@@ -118,6 +115,26 @@ in that tree are listed in the target's `exclude`.
   refetch returns stale rows. The VM therefore applies complete/delete
   optimistically and skips the auto-refetch for those two (`mutate(reload:)`);
   other mutations optimistic-update then refetch to reconcile.
+
+## Siri / App Intents
+
+- `ReclaimDesktop/AppIntents/AddReclaimTaskIntent.swift` — `AppIntent` +
+  `AppShortcutsProvider`. Uses the modern **App Intents** framework (not SiriKit),
+  so it needs **no Siri entitlement / paid team** — works with ad-hoc signing.
+- `perform()` runs `@MainActor`, reads the token from `KeychainStore`, and calls
+  `ReclaimAPIClient.createTask`. Runs in-process (`openAppWhenRun = false`).
+- Build extracts `Contents/Resources/Metadata.appintents` (the
+  `ExtractAppIntentsMetadata` phase); the app must be **launched once** for the OS
+  to register the shortcut.
+- **Keychain caveat:** the token's Keychain access group is tied to the bundle id.
+  We changed the bundle id to `io.github.evanr76.reclaimdesktop`, so a token stored
+  under the old id isn't readable — re-enter the key in the app once after that
+  change, then the intent (same bundle id) can read it.
+- Free-form task titles can't be inline phrase parameters (App Shortcuts only
+  allows enum/entity inline params), so the intent prompts via `requestValueDialog`.
+- Can't be verified headlessly (no CLI to invoke a custom App Intent / Siri);
+  verify by hand in Shortcuts/Spotlight/Siri. Layers beneath it (`createTask`) are
+  probe-verified.
 
 ## Known issues / risks
 

@@ -55,6 +55,33 @@ public final class ReclaimAPIClient: Sendable {
         return tasks.filter { $0.isTask && !($0.deleted ?? false) }
     }
 
+    /// Create a new task. `POST /api/tasks`. Returns the created task.
+    @discardableResult
+    public func createTask(
+        title: String,
+        priority: Priority = .p3,
+        durationHours: Double = 1,
+        due: Date? = nil,
+        category: EventCategory = .work
+    ) async throws -> ReclaimTask {
+        let chunks = max(1, Int((durationHours * 4).rounded()))
+        let minChunk = min(2, chunks)
+        let maxChunk = max(chunks, minChunk)
+        var body: [String: Any] = [
+            "title": title,
+            "eventCategory": category.rawValue,
+            "priority": priority.rawValue,
+            "status": TaskStatus.new.rawValue,
+            "timeChunksRequired": chunks,
+            "minChunkSize": minChunk,
+            "maxChunkSize": maxChunk,
+        ]
+        if let due { body["due"] = Self.isoString(due) }
+        let data = try await request(method: "POST", path: "/api/tasks",
+                                     body: try JSONSerialization.data(withJSONObject: body))
+        return try decode(ReclaimTask.self, from: data)
+    }
+
     // MARK: Bulk operations
 
     /// Bulk mark complete → archives the tasks. `PATCH /api/tasks/batch/archive`.

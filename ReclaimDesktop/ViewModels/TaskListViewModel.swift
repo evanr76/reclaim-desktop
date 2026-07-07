@@ -46,6 +46,12 @@ final class TaskListViewModel {
             client = ReclaimAPIClient(token: token)
             isConfigured = true
         }
+        // Refresh when the Siri/Shortcuts/Spotlight intent adds a task in-process.
+        NotificationCenter.default.addObserver(
+            forName: .reclaimTaskCreated, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.loadTasks() }
+        }
     }
 
     // MARK: - Derived list

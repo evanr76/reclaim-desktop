@@ -6,7 +6,21 @@ struct TaskListView: View {
     @Bindable var vm: TaskListViewModel
     @State private var selection = Set<Int>()
     @State private var editingTask: ReclaimTask?
+    @State private var pendingDeleteIDs: [Int]?
     @State private var sortOrder: [KeyPathComparator<ReclaimTask>] = [KeyPathComparator(\.sortDue)]
+
+    // Column show/hide/reorder state, persisted across launches.
+    @State private var columnCustomization = TableColumnCustomization<ReclaimTask>()
+    @AppStorage("taskColumnCustomization") private var columnCustomizationData = Data()
+
+    /// Columns the user may hide (Task stays fixed).
+    private let optionalColumns: [(id: String, title: String)] = [
+        ("priority", "Priority"),
+        ("due", "Due"),
+        ("duration", "Duration"),
+        ("created", "Created"),
+        ("status", "Status"),
+    ]
 
     private var selectedIDs: [Int] { Array(selection) }
 
@@ -33,7 +47,49 @@ struct TaskListView: View {
         .sheet(item: $editingTask) { task in
             TaskEditView(vm: vm, task: task)
         }
+        .confirmationDialog(
+            "Delete \(pendingDeleteIDs?.count ?? 0) task\((pendingDeleteIDs?.count ?? 0) == 1 ? "" : "s")?",
+            isPresented: Binding(
+                get: { pendingDeleteIDs != nil },
+                set: { if !$0 { pendingDeleteIDs = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let ids = pendingDeleteIDs {
+                Button("Delete \(ids.count)", role: .destructive) {
+                    Task { await vm.bulkDelete(ids: ids) }
+                    selection.subtract(ids)
+                    pendingDeleteIDs = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteIDs = nil }
+        } message: {
+            Text("This permanently deletes from Reclaim and cannot be undone.")
+        }
+        .onAppear {
+            if !columnCustomizationData.isEmpty,
+               let saved = try? JSONDecoder().decode(
+                   TableColumnCustomization<ReclaimTask>.self, from: columnCustomizationData) {
+                columnCustomization = saved
+            }
+        }
+        .onChange(of: columnCustomization) { _, newValue in
+            columnCustomizationData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
         .task { if vm.allTasks.isEmpty { await vm.loadTasks() } }
+    }
+
+    // MARK: Column chooser helpers
+
+    private func columnVisible(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { columnCustomization[visibility: id] != .hidden },
+            set: { columnCustomization[visibility: id] = $0 ? .visible : .hidden }
+        )
+    }
+
+    private func resetColumns() {
+        columnCustomization = TableColumnCustomization<ReclaimTask>()
     }
 
     // MARK: Filter bar
@@ -65,22 +121,38 @@ struct TaskListView: View {
     }
 
     private var table: some View {
-        Table(of: ReclaimTask.self, selection: $selection, sortOrder: $sortOrder) {
-            TableColumn("Task", value: \.displayTitle) { taskCell($0) }.width(min: 220, ideal: 340)
-            TableColumn("Priority", value: \.sortPriorityRank) { priorityCell($0) }.width(70)
+        Table(of: ReclaimTask.self,
+              selection: $selection,
+              sortOrder: $sortOrder,
+              columnCustomization: $columnCustomization) {
+            TableColumn("Task", value: \.displayTitle) { taskCell($0) }
+                .width(min: 220, ideal: 340)
+                .customizationID("task")
+                .disabledCustomizationBehavior(.visibility)   // Task can't be hidden
+            TableColumn("Priority", value: \.sortPriorityRank) { priorityCell($0) }
+                .width(70)
+                .customizationID("priority")
             TableColumn("Due", value: \.sortDue) { task in
                 Text(Fmt.day(task.due)).foregroundStyle(task.isOverdue ? .red : .primary)
             }
             .width(min: 90, ideal: 120)
+            .customizationID("due")
             TableColumn("Duration", value: \.sortDurationChunks) { task in
                 Text(Fmt.duration(task.durationHours)).foregroundStyle(.secondary)
             }
             .width(80)
+            .customizationID("duration")
+            TableColumn("Created", value: \.sortCreated) { task in
+                Text(Fmt.day(task.created)).foregroundStyle(.secondary)
+            }
+            .width(min: 90, ideal: 120)
+            .customizationID("created")
             TableColumn("Status", value: \.sortStatusLabel) { task in
                 Text(task.statusEnum?.label ?? (task.status ?? "—"))
                     .font(.caption).foregroundStyle(.secondary)
             }
             .width(min: 90, ideal: 110)
+            .customizationID("status")
         } rows: {
             if upNextTasks.isEmpty {
                 ForEach(otherTasks) { TableRow($0) }
@@ -169,7 +241,7 @@ struct TaskListView: View {
         }
         Divider()
         Button("Delete \(list.count)…", role: .destructive) {
-            Task { await vm.bulkDelete(ids: list) }
+            pendingDeleteIDs = list
         }
     }
 
@@ -211,6 +283,20 @@ struct TaskListView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Section("Show Columns") {
+                    ForEach(optionalColumns, id: \.id) { col in
+                        Toggle(col.title, isOn: columnVisible(col.id))
+                    }
+                }
+                Divider()
+                Button("Reset to Defaults") { resetColumns() }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .help("Choose columns")
+        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 Task { await vm.loadTasks() }

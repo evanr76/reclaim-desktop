@@ -84,6 +84,8 @@ public struct ReclaimTask: Codable, Identifiable, Hashable {
 
     /// Undated tasks sort to the end.
     public var sortDue: Date { due ?? .distantFuture }
+    /// Full creation timestamp for absolute sorting (column displays date only).
+    public var sortCreated: Date { created ?? .distantPast }
     /// P1=0 … P4=3; unset sorts last.
     public var sortPriorityRank: Int { priorityEnum?.rank ?? 99 }
     /// Duration in chunks; unset sorts first (as -1).

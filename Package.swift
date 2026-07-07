@@ -25,6 +25,8 @@ let package = Package(
                 "ReclaimDesktop.entitlements",
                 "Views",
                 "ViewModels",
+                "AppIntents",
+                "Assets.xcassets",
                 "Services/KeychainStore.swift",
             ],
             sources: [
