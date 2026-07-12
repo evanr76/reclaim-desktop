@@ -6,6 +6,7 @@ import AppKit
 struct MenuBarView: View {
     @Bindable var vm: TaskListViewModel
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("appearance") private var appearanceRaw = AppAppearance.system.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -49,6 +50,7 @@ struct MenuBarView: View {
         }
         .padding(12)
         .frame(width: 320)
+        .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
         .task { if vm.isConfigured && vm.allTasks.isEmpty { await vm.loadTasks() } }
     }
 

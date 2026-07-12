@@ -4,6 +4,7 @@ import SwiftUI
 /// task list.
 struct ContentView: View {
     @Bindable var vm: TaskListViewModel
+    @AppStorage("appearance") private var appearanceRaw = AppAppearance.system.rawValue
 
     var body: some View {
         Group {
@@ -13,6 +14,7 @@ struct ContentView: View {
                 OnboardingView(vm: vm)
             }
         }
+        .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
         .task {
             if vm.isConfigured && vm.allTasks.isEmpty {
                 await vm.loadTasks()

@@ -23,11 +23,15 @@ struct SettingsView: View {
 
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @AppStorage("refreshIntervalMinutes") private var refreshIntervalMinutes = 60
+    @AppStorage("appearance") private var appearanceRaw = AppAppearance.system.rawValue
     @State private var openAtLogin = LoginItem.isEnabled
 
     var body: some View {
         Form {
             Section("General") {
+                Picker("Appearance", selection: $appearanceRaw) {
+                    ForEach(AppAppearance.allCases) { Text($0.label).tag($0.rawValue) }
+                }
                 Toggle("Open at login", isOn: $openAtLogin)
                     .onChange(of: openAtLogin) { _, wanted in
                         // Revert the toggle if the system rejected the change.
@@ -80,6 +84,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 480)
+        .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
+        .frame(width: 460, height: 520)
     }
 }
