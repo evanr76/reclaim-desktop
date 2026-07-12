@@ -34,6 +34,7 @@ let package = Package(
                 "Models/Enums.swift",
                 "Models/ReclaimTask.swift",
                 "Models/User.swift",
+                "Models/Moment.swift",
                 "Services/ReclaimAPIClient.swift",
             ]
         ),

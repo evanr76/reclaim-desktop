@@ -88,6 +88,18 @@ public final class ReclaimAPIClient: Sendable {
         return try decode(ReclaimTask.self, from: data)
     }
 
+    /// The block scheduled right now (may have no `event`). `GET /api/moment`.
+    public func currentMoment() async throws -> Moment {
+        let data = try await request(method: "GET", path: "/api/moment")
+        return try decode(Moment.self, from: data)
+    }
+
+    /// The next upcoming block. `GET /api/moment/next`.
+    public func nextMoment() async throws -> Moment {
+        let data = try await request(method: "GET", path: "/api/moment/next")
+        return try decode(Moment.self, from: data)
+    }
+
     // MARK: Bulk operations
 
     /// Bulk mark complete → archives the tasks. `PATCH /api/tasks/batch/archive`.

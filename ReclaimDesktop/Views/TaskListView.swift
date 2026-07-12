@@ -26,6 +26,7 @@ struct TaskListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            NowNextBanner(current: vm.currentEvent, next: vm.nextEvent)
             filterBar
             Divider()
             table

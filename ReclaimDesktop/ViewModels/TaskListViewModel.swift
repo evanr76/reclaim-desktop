@@ -34,6 +34,10 @@ final class TaskListViewModel {
     private(set) var allTasks: [ReclaimTask] = []
     private(set) var lastRefreshed: Date?
 
+    // "Now & Next" scheduled blocks (best-effort; scope-limited keys may 403).
+    private(set) var currentEvent: MomentEvent?
+    private(set) var nextEvent: MomentEvent?
+
     // UI state
     var filter: TaskFilter = .active
     var searchText: String = ""
@@ -200,6 +204,8 @@ final class TaskListViewModel {
             allTasks = try await client.fetchTasks(userId: userId)
             lastRefreshed = Date()
             errorMessage = nil
+            currentEvent = (try? await client.currentMoment())?.event
+            nextEvent = (try? await client.nextMoment())?.event
         } catch let apiError as ReclaimAPIError {
             // Always act on a dead session, even during a silent background refresh.
             if case .unauthorized = apiError {
