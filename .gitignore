@@ -19,3 +19,6 @@ Packages/
 
 # Added by ggshield
 .cache_ggshield
+
+# Packaged disk images
+dist/

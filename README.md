@@ -96,6 +96,29 @@ RECLAIM_PROBE_ALLOW_WRITES=1 swift run reclaim-probe priority P1 12345
 RECLAIM_PROBE_ALLOW_WRITES=1 swift run reclaim-probe delete 12345
 ```
 
+## Building a release (.dmg)
+
+```bash
+./scripts/make-dmg.sh              # local build -> dist/ReclaimDesktop-<version>.dmg
+NOTARIZE=1 ./scripts/make-dmg.sh   # signed + notarized, runs cleanly on any Mac
+```
+
+The plain build signs with whatever identity is available and runs on your own
+Mac, but other Macs will show a Gatekeeper warning. For distribution, use
+`NOTARIZE=1`, which requires (one-time):
+
+1. A **Developer ID Application** certificate — Xcode → Settings → Accounts →
+   Manage Certificates → + → *Developer ID Application*.
+2. A stored notary credential profile named `reclaim-notary`:
+   ```bash
+   xcrun notarytool store-credentials       # interactive; name it "reclaim-notary"
+   ```
+   (Use an App Store Connect API key, or your Apple ID + app-specific password +
+   team id.) Override the name with `NOTARY_PROFILE=<name>`.
+
+`NOTARIZE=1` then signs (hardened runtime + timestamp), submits to Apple, waits,
+staples the ticket, and validates.
+
 ## Architecture
 
 ```

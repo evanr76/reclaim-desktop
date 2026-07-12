@@ -8,6 +8,7 @@ public enum ReclaimAPIError: LocalizedError {
     case http(status: Int, message: String)
     case network(String)
     case decoding(String)
+    case invalidInput(String)
 
     public var errorDescription: String? {
         switch self {
@@ -21,6 +22,8 @@ public enum ReclaimAPIError: LocalizedError {
             return "Network error: \(msg)"
         case let .decoding(msg):
             return "Could not read the response from Reclaim: \(msg)"
+        case let .invalidInput(msg):
+            return msg
         }
     }
 }
@@ -64,6 +67,9 @@ public final class ReclaimAPIClient: Sendable {
         due: Date? = nil,
         category: EventCategory = .work
     ) async throws -> ReclaimTask {
+        guard durationHours.isFinite, durationHours > 0 else {
+            throw ReclaimAPIError.invalidInput("Duration must be a positive, finite number of hours.")
+        }
         let chunks = max(1, Int((durationHours * 4).rounded()))
         let minChunk = min(2, chunks)
         let maxChunk = max(chunks, minChunk)

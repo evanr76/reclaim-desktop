@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import Network
 
 /// Which slice of tasks to show.
 enum TaskFilter: String, CaseIterable, Identifiable {
@@ -41,6 +42,11 @@ final class TaskListViewModel {
     var errorMessage: String?
     var statusMessage: String?
 
+    // Auto-refresh + connectivity
+    private(set) var isOnline = true
+    private let pathMonitor = NWPathMonitor()
+    private var refreshTask: Task<Void, Never>?
+
     init() {
         if let token = KeychainStore.readToken() {
             client = ReclaimAPIClient(token: token)
@@ -52,6 +58,42 @@ final class TaskListViewModel {
         ) { [weak self] _ in
             Task { @MainActor in await self?.loadTasks() }
         }
+        // Track connectivity so auto-refresh only fires when online.
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in self?.isOnline = (path.status == .satisfied) }
+        }
+        pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
+        // Start the periodic refresh from the saved interval (default hourly).
+        let stored = UserDefaults.standard.object(forKey: "refreshIntervalMinutes") as? Int ?? 60
+        configureAutoRefresh(intervalMinutes: stored)
+    }
+
+    /// Restart the periodic background refresh. `0` (Off) stops it.
+    func configureAutoRefresh(intervalMinutes: Int) {
+        refreshTask?.cancel()
+        guard intervalMinutes > 0 else { refreshTask = nil; return }
+        refreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Double(intervalMinutes) * 60))
+                guard let self, !Task.isCancelled else { break }
+                if self.isOnline && self.isConfigured {
+                    await self.loadTasks(silent: true)
+                }
+            }
+        }
+    }
+
+    /// Up Next tasks plus the highest-priority unfinished tasks, capped at 5 —
+    /// the menu-bar glance view.
+    var menuBarTasks: [ReclaimTask] {
+        let unfinished = allTasks.filter { !$0.isFinished }
+        let upNext = unfinished.filter { $0.onDeck == true }.sorted(by: Self.defaultSort)
+        let others = unfinished.filter { !($0.onDeck ?? false) }.sorted { a, b in
+            let pa = a.priorityEnum ?? .p3, pb = b.priorityEnum ?? .p3
+            if pa != pb { return pa < pb }
+            return Self.defaultSort(a, b)
+        }
+        return Array((upNext + others).prefix(5))
     }
 
     // MARK: - Derived list
@@ -143,29 +185,32 @@ final class TaskListViewModel {
 
     // MARK: - Loading
 
-    func loadTasks() async {
+    /// Load tasks. `silent` background refreshes don't show the spinner or
+    /// surface transient errors (used by the auto-refresh timer).
+    func loadTasks(silent: Bool = false) async {
         guard let client else { isConfigured = false; return }
-        isLoading = true
-        defer { isLoading = false }
+        if !silent { isLoading = true }
+        defer { if !silent { isLoading = false } }
         do {
             if user == nil { user = try await client.currentUser() }
             guard let userId = user?.id else {
-                errorMessage = "Could not determine the current user."
+                if !silent { errorMessage = "Could not determine the current user." }
                 return
             }
             allTasks = try await client.fetchTasks(userId: userId)
             lastRefreshed = Date()
             errorMessage = nil
         } catch let apiError as ReclaimAPIError {
+            // Always act on a dead session, even during a silent background refresh.
             if case .unauthorized = apiError {
-                // Bad/expired token: drop back to onboarding.
                 signOut()
-                errorMessage = apiError.localizedDescription
-            } else {
-                errorMessage = apiError.localizedDescription
+                if !silent { errorMessage = apiError.localizedDescription }
+                return
             }
+            guard !silent else { return }   // ignore other transient background failures
+            errorMessage = apiError.localizedDescription
         } catch {
-            errorMessage = error.localizedDescription
+            if !silent { errorMessage = error.localizedDescription }
         }
     }
 

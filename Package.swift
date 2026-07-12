@@ -28,6 +28,7 @@ let package = Package(
                 "AppIntents",
                 "Assets.xcassets",
                 "Services/KeychainStore.swift",
+                "Services/LoginItem.swift",
             ],
             sources: [
                 "Models/Enums.swift",

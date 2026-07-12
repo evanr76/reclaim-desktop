@@ -1,12 +1,49 @@
 import SwiftUI
 
-/// Preferences window (⌘,): manage the stored API key and account.
+/// Auto-refresh cadence options (minutes; 0 = off).
+enum RefreshInterval: Int, CaseIterable, Identifiable {
+    case off = 0, m15 = 15, m30 = 30, hourly = 60, h2 = 120
+
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .m15: return "Every 15 minutes"
+        case .m30: return "Every 30 minutes"
+        case .hourly: return "Hourly"
+        case .h2: return "Every 2 hours"
+        }
+    }
+}
+
+/// Preferences window (⌘,): general options plus API key / account.
 struct SettingsView: View {
     @Bindable var vm: TaskListViewModel
     @State private var newToken: String = ""
 
+    @AppStorage("showInMenuBar") private var showInMenuBar = true
+    @AppStorage("refreshIntervalMinutes") private var refreshIntervalMinutes = 60
+    @State private var openAtLogin = LoginItem.isEnabled
+
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Open at login", isOn: $openAtLogin)
+                    .onChange(of: openAtLogin) { _, wanted in
+                        // Revert the toggle if the system rejected the change.
+                        if !LoginItem.setEnabled(wanted) { openAtLogin = LoginItem.isEnabled }
+                    }
+                Toggle("Show in menu bar", isOn: $showInMenuBar)
+                Picker("Refresh", selection: $refreshIntervalMinutes) {
+                    ForEach(RefreshInterval.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                .onChange(of: refreshIntervalMinutes) { _, minutes in
+                    vm.configureAutoRefresh(intervalMinutes: minutes)
+                }
+                Text("Auto-refresh runs only while online.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Account") {
                 if let user = vm.user {
                     LabeledContent("Signed in as", value: user.displayName)
@@ -43,6 +80,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 340)
+        .frame(width: 460, height: 480)
     }
 }
