@@ -290,6 +290,15 @@ final class TaskListViewModel {
         guard !patch.isEmpty else { return }
         await mutate("Saved changes.") { try await $0.updateTask(id: id, patch: patch) }
     }
+    func startTask(id: Int) async {
+        await mutate("Started working.", optimistic: { self.apply(ids: [id]) { $0.status = TaskStatus.inProgress.rawValue } }) { try await $0.startTask(id: id) }
+    }
+    func stopTask(id: Int) async {
+        await mutate("Stopped.") { try await $0.stopTask(id: id) }
+    }
+    func autoPrioritizeByDue() async {
+        await mutate("Reprioritized by due date.") { try await $0.reindexByDue() }
+    }
 
     // MARK: - Optimistic local edits
 

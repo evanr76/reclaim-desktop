@@ -164,6 +164,21 @@ public final class ReclaimAPIClient: Sendable {
         _ = try await request(method: "POST", path: "/api/planner/unarchive/task/\(id)")
     }
 
+    /// Start a work session on a task. `POST /api/planner/start/task/{id}`.
+    public func startTask(id: Int) async throws {
+        _ = try await request(method: "POST", path: "/api/planner/start/task/\(id)")
+    }
+
+    /// Stop the active work session. `POST /api/planner/stop/task/{id}`.
+    public func stopTask(id: Int) async throws {
+        _ = try await request(method: "POST", path: "/api/planner/stop/task/\(id)")
+    }
+
+    /// Auto-prioritize all tasks by due date. `PATCH /api/tasks/reindex-by-due`.
+    public func reindexByDue() async throws {
+        _ = try await request(method: "PATCH", path: "/api/tasks/reindex-by-due")
+    }
+
     // MARK: - Raw access (diagnostics)
 
     /// The query used by `fetchTasks`, exposed so the probe can hit the exact

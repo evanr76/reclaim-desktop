@@ -7,6 +7,7 @@ struct TaskListView: View {
     @State private var selection = Set<Int>()
     @State private var editingTask: ReclaimTask?
     @State private var pendingDeleteIDs: [Int]?
+    @State private var showReindexConfirm = false
     @State private var sortOrder: [KeyPathComparator<ReclaimTask>] = [KeyPathComparator(\.sortDue)]
 
     // Column show/hide/reorder state, persisted across launches.
@@ -66,6 +67,12 @@ struct TaskListView: View {
             Button("Cancel", role: .cancel) { pendingDeleteIDs = nil }
         } message: {
             Text("This permanently deletes from Reclaim and cannot be undone.")
+        }
+        .confirmationDialog("Reprioritize all tasks by due date?", isPresented: $showReindexConfirm, titleVisibility: .visible) {
+            Button("Auto-Prioritize") { Task { await vm.autoPrioritizeByDue() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Reorders your whole task list so sooner due dates come first.")
         }
         .onAppear {
             if !columnCustomizationData.isEmpty,
@@ -180,6 +187,10 @@ struct TaskListView: View {
     private func taskCell(_ task: ReclaimTask) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
+                if task.statusEnum == .inProgress {
+                    Image(systemName: "record.circle")
+                        .foregroundStyle(.green).font(.caption)
+                }
                 if task.onDeck == true {
                     Image(systemName: "bolt.fill")
                         .foregroundStyle(.yellow).font(.caption)
@@ -187,6 +198,10 @@ struct TaskListView: View {
                 if task.isOverdue {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red).font(.caption)
+                }
+                if task.atRisk == true && !task.isFinished {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.caption)
                 }
                 if task.isSnoozed {
                     Image(systemName: "moon.zzz.fill")
@@ -225,6 +240,11 @@ struct TaskListView: View {
                 Button("Reopen") { Task { await vm.markIncomplete(id: task.id) } }
             } else {
                 Button("Mark Complete") { Task { await vm.markComplete(id: task.id) } }
+                if task.statusEnum == .inProgress {
+                    Button("Stop Working") { Task { await vm.stopTask(id: task.id) } }
+                } else {
+                    Button("Start Working") { Task { await vm.startTask(id: task.id) } }
+                }
             }
             Divider()
         }
@@ -313,6 +333,8 @@ struct TaskListView: View {
                     Text(user.displayName)
                     Divider()
                 }
+                Button("Auto-Prioritize by Due…") { showReindexConfirm = true }
+                Divider()
                 SettingsLink {
                     Label("Settings…", systemImage: "gearshape")
                 }
