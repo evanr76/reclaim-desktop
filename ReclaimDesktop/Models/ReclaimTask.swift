@@ -44,6 +44,7 @@ public struct ReclaimTask: Codable, Identifiable, Hashable {
     public var priorityEnum: Priority? { priority.flatMap(Priority.init(rawValue:)) }
     public var statusEnum: TaskStatus? { status.flatMap(TaskStatus.init(rawValue:)) }
     public var categoryEnum: EventCategory? { eventCategory.flatMap(EventCategory.init(rawValue:)) }
+    public var colorEnum: EventColor? { eventColor.flatMap(EventColor.init(rawValue:)) }
 
     public var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

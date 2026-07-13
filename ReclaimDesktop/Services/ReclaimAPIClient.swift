@@ -100,6 +100,12 @@ public final class ReclaimAPIClient: Sendable {
         return try decode(Moment.self, from: data)
     }
 
+    /// Available time schemes (custom hours). `GET /api/timeschemes`.
+    public func fetchTimeSchemes() async throws -> [TimeScheme] {
+        let data = try await request(method: "GET", path: "/api/timeschemes")
+        return try decode([TimeScheme].self, from: data)
+    }
+
     // MARK: Bulk operations
 
     /// Bulk mark complete → archives the tasks. `PATCH /api/tasks/batch/archive`.

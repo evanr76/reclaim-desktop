@@ -38,6 +38,9 @@ final class TaskListViewModel {
     private(set) var currentEvent: MomentEvent?
     private(set) var nextEvent: MomentEvent?
 
+    /// Task-capable time schemes (custom hours) for the edit pickers.
+    private(set) var timeSchemes: [TimeScheme] = []
+
     // UI state
     var filter: TaskFilter = .active
     var searchText: String = ""
@@ -206,6 +209,9 @@ final class TaskListViewModel {
             errorMessage = nil
             currentEvent = (try? await client.currentMoment())?.event
             nextEvent = (try? await client.nextMoment())?.event
+            if timeSchemes.isEmpty {
+                timeSchemes = ((try? await client.fetchTimeSchemes()) ?? []).filter { $0.supportsTasks }
+            }
         } catch let apiError as ReclaimAPIError {
             // Always act on a dead session, even during a silent background refresh.
             if case .unauthorized = apiError {

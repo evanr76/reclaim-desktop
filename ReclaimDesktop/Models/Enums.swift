@@ -59,10 +59,22 @@ public enum TaskStatus: String, Codable, CaseIterable {
 }
 
 /// Reclaim's `EventCategory`.
-public enum EventCategory: String, Codable, CaseIterable {
+public enum EventCategory: String, Codable, CaseIterable, Identifiable {
     case work = "WORK"
     case personal = "PERSONAL"
     case both = "BOTH"
 
+    public var id: String { rawValue }
     public var label: String { rawValue.capitalized }
+}
+
+/// Reclaim's `EventColor` palette.
+public enum EventColor: String, Codable, CaseIterable, Identifiable {
+    case none = "NONE", lavender = "LAVENDER", sage = "SAGE", grape = "GRAPE"
+    case flamingo = "FLAMINGO", banana = "BANANA", tangerine = "TANGERINE"
+    case peacock = "PEACOCK", graphite = "GRAPHITE", blueberry = "BLUEBERRY"
+    case basil = "BASIL", tomato = "TOMATO"
+
+    public var id: String { rawValue }
+    public var label: String { self == .none ? "Default" : rawValue.capitalized }
 }
