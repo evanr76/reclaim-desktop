@@ -35,6 +35,7 @@ let package = Package(
                 "Models/ReclaimTask.swift",
                 "Models/User.swift",
                 "Models/Moment.swift",
+                "Models/BuildInfo.swift",
                 "Services/ReclaimAPIClient.swift",
             ]
         ),

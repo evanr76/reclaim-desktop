@@ -294,6 +294,10 @@ struct TaskListView: View {
             if let refreshed = vm.lastRefreshed {
                 Text("Updated \(Fmt.relative(refreshed))").foregroundStyle(.tertiary)
             }
+            Text("· \(BuildInfo.label)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .help("Build identifier")
         }
         .font(.caption)
         .padding(.horizontal)
