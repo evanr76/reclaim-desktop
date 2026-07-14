@@ -24,6 +24,11 @@ struct SettingsView: View {
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @AppStorage("refreshIntervalMinutes") private var refreshIntervalMinutes = 60
     @AppStorage("appearance") private var appearanceRaw = AppAppearance.system.rawValue
+    @AppStorage("notifyAtRisk") private var notifyAtRisk = true
+    @AppStorage("notifyBlockStarting") private var notifyBlockStarting = true
+    @AppStorage("notifyUpNext") private var notifyUpNext = true
+    @AppStorage("notifyDigest") private var notifyDigest = true
+    @AppStorage("digestHour") private var digestHour = 8
     @State private var openAtLogin = LoginItem.isEnabled
 
     var body: some View {
@@ -46,6 +51,18 @@ struct SettingsView: View {
                 }
                 Text("Auto-refresh runs only while online.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Notifications") {
+                Toggle("At-risk alerts", isOn: $notifyAtRisk)
+                Toggle("Block starting soon", isOn: $notifyBlockStarting)
+                Toggle("Up Next changes", isOn: $notifyUpNext)
+                Toggle("Morning digest", isOn: $notifyDigest)
+                if notifyDigest {
+                    Picker("Digest time", selection: $digestHour) {
+                        ForEach(5..<12) { Text("\($0):00").tag($0) }
+                    }
+                }
             }
 
             Section("Account") {
@@ -85,6 +102,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
-        .frame(width: 460, height: 520)
+        .frame(width: 460, height: 660)
     }
 }

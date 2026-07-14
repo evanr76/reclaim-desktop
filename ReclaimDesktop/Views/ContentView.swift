@@ -16,6 +16,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
         .task {
+            NotificationScheduler.configure()
+            await NotificationScheduler.requestAuthorization()
             if vm.isConfigured && vm.allTasks.isEmpty {
                 await vm.loadTasks()
             }

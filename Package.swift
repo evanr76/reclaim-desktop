@@ -37,6 +37,7 @@ let package = Package(
                 "Models/Moment.swift",
                 "Models/BuildInfo.swift",
                 "Models/TimeScheme.swift",
+                "Models/Notifications.swift",
                 "Services/ReclaimAPIClient.swift",
             ]
         ),
