@@ -8,6 +8,7 @@ struct TaskListView: View {
     @State private var editingTask: ReclaimTask?
     @State private var pendingDeleteIDs: [Int]?
     @State private var showReindexConfirm = false
+    @State private var showCreate = false
     @State private var sortOrder: [KeyPathComparator<ReclaimTask>] = [KeyPathComparator(\.sortDue)]
 
     // Column show/hide/reorder state, persisted across launches.
@@ -48,6 +49,9 @@ struct TaskListView: View {
         .toolbar { toolbarContent }
         .sheet(item: $editingTask) { task in
             TaskEditView(vm: vm, task: task)
+        }
+        .sheet(isPresented: $showCreate) {
+            TaskCreateView(vm: vm)
         }
         .confirmationDialog(
             "Delete \(pendingDeleteIDs?.count ?? 0) task\((pendingDeleteIDs?.count ?? 0) == 1 ? "" : "s")?",
@@ -308,6 +312,12 @@ struct TaskListView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button { showCreate = true } label: { Image(systemName: "plus") }
+                .keyboardShortcut("n", modifiers: .command)
+                .help("New Task")
+                .disabled(!vm.isConfigured)
+        }
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Section("Show Columns") {

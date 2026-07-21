@@ -330,6 +330,11 @@ final class TaskListViewModel {
     func autoPrioritizeByDue() async {
         await mutate("Reprioritized by due date.") { try await $0.reindexByDue() }
     }
+    func createTask(title: String, priority: Priority, durationHours: Double, due: Date?) async {
+        await mutate("Added task.") {
+            _ = try await $0.createTask(title: title, priority: priority, durationHours: durationHours, due: due)
+        }
+    }
 
     // MARK: - Optimistic local edits
 
