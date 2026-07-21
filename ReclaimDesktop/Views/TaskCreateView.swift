@@ -8,7 +8,12 @@ struct TaskCreateView: View {
     @State private var title = ""
     @State private var priority: Priority = .p3
     @State private var hasDue = false
-    @State private var due = Date()
+    @State private var due: Date = {
+        // Default to the next 6:00 PM (today, or tomorrow if it's already past).
+        let cal = Calendar.current
+        let six = cal.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date()
+        return six > Date() ? six : (cal.date(byAdding: .day, value: 1, to: six) ?? six)
+    }()
     @State private var durationHours: Double = 1
 
     var body: some View {

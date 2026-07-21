@@ -15,6 +15,39 @@ struct TaskListView: View {
     @State private var columnCustomization = TableColumnCustomization<ReclaimTask>()
     @AppStorage("taskColumnCustomization") private var columnCustomizationData = Data()
 
+    // Sort persistence.
+    @AppStorage("sortColumn") private var sortColumnID = "due"
+    @AppStorage("sortAscending") private var sortAscendingStored = true
+
+    /// Forward comparator per sortable column id (order is applied separately).
+    private static let sortComparators: [(id: String, comparator: KeyPathComparator<ReclaimTask>)] = [
+        ("title", KeyPathComparator(\.displayTitle)),
+        ("priority", KeyPathComparator(\.sortPriorityRank)),
+        ("due", KeyPathComparator(\.sortDue)),
+        ("duration", KeyPathComparator(\.sortDurationChunks)),
+        ("created", KeyPathComparator(\.sortCreated)),
+        ("status", KeyPathComparator(\.sortStatusLabel)),
+    ]
+
+    private func restoreSort() {
+        guard var comp = Self.sortComparators.first(where: { $0.id == sortColumnID })?.comparator else { return }
+        comp.order = sortAscendingStored ? .forward : .reverse
+        sortOrder = [comp]
+    }
+
+    private func persistSort(_ order: [KeyPathComparator<ReclaimTask>]) {
+        guard let first = order.first else { return }
+        for entry in Self.sortComparators {
+            var candidate = entry.comparator
+            candidate.order = first.order
+            if candidate == first {
+                sortColumnID = entry.id
+                sortAscendingStored = (first.order == .forward)
+                return
+            }
+        }
+    }
+
     /// Columns the user may hide (Task stays fixed).
     private let optionalColumns: [(id: String, title: String)] = [
         ("priority", "Priority"),
@@ -84,9 +117,13 @@ struct TaskListView: View {
                    TableColumnCustomization<ReclaimTask>.self, from: columnCustomizationData) {
                 columnCustomization = saved
             }
+            restoreSort()
         }
         .onChange(of: columnCustomization) { _, newValue in
             columnCustomizationData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+        .onChange(of: sortOrder) { _, newValue in
+            persistSort(newValue)
         }
         .task { if vm.allTasks.isEmpty { await vm.loadTasks() } }
     }
