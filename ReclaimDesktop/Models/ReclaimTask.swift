@@ -93,8 +93,10 @@ public struct ReclaimTask: Codable, Identifiable, Hashable {
     public var sortDurationChunks: Int { timeChunksRequired ?? -1 }
     public var sortStatusLabel: String { statusEnum?.label ?? status ?? "" }
 
-    // MARK: - Hashable / Equatable by identity
-
-    public static func == (lhs: ReclaimTask, rhs: ReclaimTask) -> Bool { lhs.id == rhs.id }
-    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    // Equatable / Hashable are synthesized structurally (over all stored
+    // fields), NOT by `id` alone. Row identity in Lists/Tables comes from
+    // `Identifiable.id`; equality must reflect field changes so SwiftUI
+    // re-renders a row when e.g. `due` is cleared. An `id`-only `==` makes the
+    // framework treat a mutated task as unchanged and skip the redraw (the bug
+    // where a cleared due date kept showing until a cold relaunch).
 }
