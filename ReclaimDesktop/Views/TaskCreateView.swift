@@ -7,14 +7,19 @@ struct TaskCreateView: View {
 
     @State private var title = ""
     @State private var priority: Priority = .p3
+    // Deliberately no due date by default — an unwanted due date defeats
+    // Reclaim's own priority-based scheduling. The picker only pre-fills a
+    // sensible value (next 6 PM) once the user explicitly turns the toggle on.
     @State private var hasDue = false
-    @State private var due: Date = {
-        // Default to the next 6:00 PM (today, or tomorrow if it's already past).
+    @State private var due: Date = TaskCreateView.defaultDue
+    @State private var durationHours: Double = 1
+
+    /// Pre-fill value shown only after the user enables the Due toggle: next 6 PM.
+    static var defaultDue: Date {
         let cal = Calendar.current
         let six = cal.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date()
         return six > Date() ? six : (cal.date(byAdding: .day, value: 1, to: six) ?? six)
-    }()
-    @State private var durationHours: Double = 1
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -142,13 +142,31 @@ public final class ReclaimAPIClient: Sendable {
     }
 
     /// Bulk change due date. Pass `nil` to clear the due date.
+    ///
+    /// The `/api/tasks/batch` endpoint silently ignores `due` (like `onDeck`) —
+    /// clearing in particular is a no-op there — so this fans out single-task
+    /// PATCHes, which do honor it.
     public func bulkReschedule(ids: [Int], due: Date?) async throws {
-        try await bulkPatch(ids: ids, patch: ["due": due.map(Self.isoString) ?? NSNull()])
+        let value: Any = due.map(Self.isoString) ?? NSNull()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for id in ids {
+                group.addTask { try await self.updateTask(id: id, patch: ["due": value]) }
+            }
+            try await group.waitForAll()
+        }
     }
 
     /// Bulk defer/snooze until a date. Pass `nil` to clear.
+    ///
+    /// Fanned out to single-task PATCHes for the same reason as `bulkReschedule`.
     public func bulkSnooze(ids: [Int], until: Date?) async throws {
-        try await bulkPatch(ids: ids, patch: ["snoozeUntil": until.map(Self.isoString) ?? NSNull()])
+        let value: Any = until.map(Self.isoString) ?? NSNull()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for id in ids {
+                group.addTask { try await self.updateTask(id: id, patch: ["snoozeUntil": value]) }
+            }
+            try await group.waitForAll()
+        }
     }
 
     // MARK: Single-task operations
