@@ -124,8 +124,17 @@ public final class ReclaimAPIClient: Sendable {
     }
 
     /// Bulk change priority (P1–P4).
+    ///
+    /// Fanned out to single-task PATCHes: the `/api/tasks/batch` endpoint
+    /// silently drops field patches (proven for `onDeck` and `due`), so a batch
+    /// priority change didn't stick server-side and the next refetch reverted it.
     public func bulkReprioritize(ids: [Int], to priority: Priority) async throws {
-        try await bulkPatch(ids: ids, patch: ["priority": priority.rawValue])
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for id in ids {
+                group.addTask { try await self.updateTask(id: id, patch: ["priority": priority.rawValue]) }
+            }
+            try await group.waitForAll()
+        }
     }
 
     /// Bulk move tasks into / out of "Up Next" (Reclaim's `onDeck` flag).
