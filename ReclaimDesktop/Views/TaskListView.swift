@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Main window: filter/search toolbar, a multi-select table of tasks, and a
 /// bulk-action bar that appears when rows are selected.
@@ -275,6 +276,11 @@ struct TaskListView: View {
     @ViewBuilder
     private func rowContextMenu(for ids: Set<Int>) -> some View {
         let list = Array(ids)
+        Button(ids.count == 1 ? "Copy Description" : "Copy \(ids.count) Descriptions") {
+            copyDescriptions(for: ids)
+        }
+        .keyboardShortcut("c", modifiers: .command)
+        Divider()
         if list.count == 1, let task = vm.task(withID: list[0]) {
             Button("Edit…") { editingTask = task }
             if task.isFinished {
@@ -305,6 +311,16 @@ struct TaskListView: View {
         Button("Delete \(list.count)…", role: .destructive) {
             pendingDeleteIDs = list
         }
+    }
+
+    /// Copy the selected tasks' descriptions (titles) to the clipboard, one per
+    /// line, preserving the on-screen order.
+    private func copyDescriptions(for ids: Set<Int>) {
+        let ordered = (upNextTasks + otherTasks).filter { ids.contains($0.id) }
+        let text = ordered.map(\.displayTitle).joined(separator: "\n")
+        guard !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var emptyState: some View {
