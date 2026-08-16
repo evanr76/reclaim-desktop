@@ -16,6 +16,15 @@ struct TaskListView: View {
     @State private var columnCustomization = TableColumnCustomization<ReclaimTask>()
     @AppStorage("taskColumnCustomization") private var columnCustomizationData = Data()
 
+    // Inline (Finder-style) rename state.
+    @State private var editingID: Int?
+    @State private var editText = ""
+    @FocusState private var renameFieldFocused: Bool
+    // Slow-double-click detection (a second click on the same row, slower than a
+    // double-click, starts a rename — like Finder).
+    @State private var lastClickID: Int?
+    @State private var lastClickTime = Date.distantPast
+
     // Sort persistence.
     @AppStorage("sortColumn") private var sortColumnID = "due"
     @AppStorage("sortAscending") private var sortAscendingStored = true
@@ -97,8 +106,8 @@ struct TaskListView: View {
         ) {
             if let ids = pendingDeleteIDs {
                 Button("Delete \(ids.count)", role: .destructive) {
+                    advanceSelection(past: Set(ids))
                     Task { await vm.bulkDelete(ids: ids) }
-                    selection.subtract(ids)
                     pendingDeleteIDs = nil
                 }
             }
@@ -226,14 +235,22 @@ struct TaskListView: View {
         // Focus-scoped shortcuts: only fire when the table has key focus, so
         // they don't hijack typing in the search field or a sheet.
         .onDeleteCommand {
-            guard !selection.isEmpty else { return }
+            guard editingID == nil, !selection.isEmpty else { return }
             pendingDeleteIDs = Array(selection)   // routes through the confirm dialog
         }
         .onKeyPress(characters: CharacterSet(charactersIn: "eE"), phases: .down) { _ in
-            guard !selection.isEmpty else { return .ignored }
+            guard editingID == nil, !selection.isEmpty else { return .ignored }
             let ids = Array(selection)
+            advanceSelection(past: Set(ids))
             Task { await vm.bulkComplete(ids: ids) }
-            selection.removeAll()
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "uU"), phases: .down) { _ in
+            guard editingID == nil else { return .ignored }
+            let finishedIDs = selection.compactMap { vm.task(withID: $0) }
+                .filter(\.isFinished).map(\.id)
+            guard !finishedIDs.isEmpty else { return .ignored }
+            Task { for id in finishedIDs { await vm.markIncomplete(id: id) } }
             return .handled
         }
     }
@@ -262,15 +279,81 @@ struct TaskListView: View {
                     Image(systemName: "moon.zzz.fill")
                         .foregroundStyle(.secondary).font(.caption)
                 }
-                Text(task.displayTitle)
-                    .lineLimit(1)
-                    .strikethrough(task.isFinished, color: .secondary)
-                    .foregroundStyle(task.isFinished ? .secondary : .primary)
+                if editingID == task.id {
+                    TextField("Title", text: $editText)
+                        .textFieldStyle(.plain)
+                        .focused($renameFieldFocused)
+                        .onSubmit { commitRename(task) }
+                        .onExitCommand { editingID = nil }   // Esc cancels
+                        .onChange(of: renameFieldFocused) { _, focused in
+                            if !focused && editingID == task.id { commitRename(task) }
+                        }
+                        .onAppear { renameFieldFocused = true }
+                } else {
+                    Text(task.displayTitle)
+                        .lineLimit(1)
+                        .strikethrough(task.isFinished, color: .secondary)
+                        .foregroundStyle(task.isFinished ? .secondary : .primary)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(TapGesture().onEnded { handleTitleClick(task) })
+                }
             }
             if let notes = task.notes, !notes.isEmpty {
                 Text(notes).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+    }
+
+    // MARK: - Inline rename
+
+    /// Finder-style: a second click on the same row, slower than the system
+    /// double-click interval, begins an inline rename. A fast double-click stays
+    /// under the interval and is handled by the table's primaryAction (edit sheet).
+    private func handleTitleClick(_ task: ReclaimTask) {
+        let now = Date()
+        if lastClickID == task.id, now.timeIntervalSince(lastClickTime) > NSEvent.doubleClickInterval {
+            startRename(task)
+        }
+        lastClickID = task.id
+        lastClickTime = now
+    }
+
+    private func startRename(_ task: ReclaimTask) {
+        editText = task.title ?? ""
+        editingID = task.id
+        lastClickID = nil
+    }
+
+    private func commitRename(_ task: ReclaimTask) {
+        let newTitle = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        editingID = nil
+        guard !newTitle.isEmpty, newTitle != (task.title ?? "") else { return }
+        Task { await vm.updateTask(id: task.id, patch: ["title": newTitle]) }
+    }
+
+    // MARK: - Selection advancement
+
+    /// After acting on `acted`, select the next surviving row (or the previous one
+    /// if the acted rows were last), matching Finder/Mail behavior.
+    private func advanceSelection(past acted: Set<Int>) {
+        if let next = nextSelectionID(after: acted) {
+            selection = [next]
+        } else {
+            selection.removeAll()
+        }
+    }
+
+    private func nextSelectionID(after acted: Set<Int>) -> Int? {
+        let displayed = upNextTasks + otherTasks
+        let indices = displayed.indices.filter { acted.contains(displayed[$0].id) }
+        guard let first = indices.first, let last = indices.last else { return nil }
+        if let next = displayed[(last + 1)...].first(where: { !acted.contains($0.id) }) {
+            return next.id
+        }
+        if let prev = displayed[..<first].last(where: { !acted.contains($0.id) }) {
+            return prev.id
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -296,10 +379,14 @@ struct TaskListView: View {
         Divider()
         if list.count == 1, let task = vm.task(withID: list[0]) {
             Button("Edit…") { editingTask = task }
+            Button("Rename") { startRename(task) }
             if task.isFinished {
                 Button("Reopen") { Task { await vm.markIncomplete(id: task.id) } }
             } else {
-                Button("Mark Complete") { Task { await vm.markComplete(id: task.id) } }
+                Button("Mark Complete") {
+                    advanceSelection(past: [task.id])
+                    Task { await vm.markComplete(id: task.id) }
+                }
                 if task.statusEnum == .inProgress {
                     Button("Stop Working") { Task { await vm.stopTask(id: task.id) } }
                 } else {
@@ -308,7 +395,10 @@ struct TaskListView: View {
             }
             Divider()
         }
-        Button("Mark \(list.count) Complete") { Task { await vm.bulkComplete(ids: list) } }
+        Button("Mark \(list.count) Complete") {
+            advanceSelection(past: Set(list))
+            Task { await vm.bulkComplete(ids: list) }
+        }
         Menu("Set Priority") {
             ForEach(Priority.allCases) { p in
                 Button(p.label) { Task { await vm.bulkReprioritize(ids: list, to: p) } }
