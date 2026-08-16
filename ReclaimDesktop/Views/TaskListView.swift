@@ -20,10 +20,9 @@ struct TaskListView: View {
     @State private var editingID: Int?
     @State private var editText = ""
     @FocusState private var renameFieldFocused: Bool
-    // Slow-double-click detection (a second click on the same row, slower than a
-    // double-click, starts a rename — like Finder).
-    @State private var lastClickID: Int?
-    @State private var lastClickTime = Date.distantPast
+    // Pending inline rename, used to disambiguate a slow re-click (rename) from a
+    // fast double-click (edit sheet) on the already-selected row.
+    @State private var pendingRename: DispatchWorkItem?
 
     // Sort persistence.
     @AppStorage("sortColumn") private var sortColumnID = "due"
@@ -227,6 +226,7 @@ struct TaskListView: View {
         .contextMenu(forSelectionType: Int.self) { ids in
             rowContextMenu(for: ids)
         } primaryAction: { ids in
+            pendingRename?.cancel()   // a double-click opens the sheet, not a rename
             if let id = ids.first { editingTask = vm.task(withID: id) }
         }
         .overlay {
@@ -290,12 +290,20 @@ struct TaskListView: View {
                         }
                         .onAppear { renameFieldFocused = true }
                 } else {
-                    Text(task.displayTitle)
+                    let label = Text(task.displayTitle)
                         .lineLimit(1)
                         .strikethrough(task.isFinished, color: .secondary)
                         .foregroundStyle(task.isFinished ? .secondary : .primary)
-                        .contentShape(Rectangle())
-                        .simultaneousGesture(TapGesture().onEnded { handleTitleClick(task) })
+                    // Only the already-selected single row carries the rename
+                    // gesture; unselected rows stay gesture-free so normal table
+                    // selection isn't blocked.
+                    if selection == [task.id] {
+                        label
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(TapGesture().onEnded { scheduleRename(task) })
+                    } else {
+                        label
+                    }
                 }
             }
             if let notes = task.notes, !notes.isEmpty {
@@ -306,22 +314,22 @@ struct TaskListView: View {
 
     // MARK: - Inline rename
 
-    /// Finder-style: a second click on the same row, slower than the system
-    /// double-click interval, begins an inline rename. A fast double-click stays
-    /// under the interval and is handled by the table's primaryAction (edit sheet).
-    private func handleTitleClick(_ task: ReclaimTask) {
-        let now = Date()
-        if lastClickID == task.id, now.timeIntervalSince(lastClickTime) > NSEvent.doubleClickInterval {
-            startRename(task)
+    /// Finder-style: a click on the already-selected row begins an inline rename,
+    /// but only after the double-click window passes — a fast double-click cancels
+    /// this (via `primaryAction`) and opens the edit sheet instead.
+    private func scheduleRename(_ task: ReclaimTask) {
+        pendingRename?.cancel()
+        let work = DispatchWorkItem {
+            if editingID == nil { startRename(task) }
         }
-        lastClickID = task.id
-        lastClickTime = now
+        pendingRename = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval + 0.06, execute: work)
     }
 
     private func startRename(_ task: ReclaimTask) {
+        pendingRename?.cancel()
         editText = task.title ?? ""
         editingID = task.id
-        lastClickID = nil
     }
 
     private func commitRename(_ task: ReclaimTask) {

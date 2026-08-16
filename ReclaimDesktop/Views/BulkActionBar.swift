@@ -16,6 +16,12 @@ struct BulkActionBar: View {
 
     private var count: Int { selectedIDs.count }
 
+    /// True when every selected task is already finished — the Complete button
+    /// then acts (and reads) as "Uncomplete".
+    private var allFinished: Bool {
+        !selectedIDs.isEmpty && selectedIDs.allSatisfy { vm.task(withID: $0)?.isFinished == true }
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             Text("\(count) selected").font(.callout.weight(.medium))
@@ -23,8 +29,16 @@ struct BulkActionBar: View {
             Divider().frame(height: 18)
 
             Button {
-                run { await vm.bulkComplete(ids: selectedIDs) }
-            } label: { Label("Complete", systemImage: "checkmark.circle") }
+                if allFinished {
+                    let ids = selectedIDs
+                    run { for id in ids { await vm.markIncomplete(id: id) } }
+                } else {
+                    run { await vm.bulkComplete(ids: selectedIDs) }
+                }
+            } label: {
+                Label(allFinished ? "Uncomplete" : "Complete",
+                      systemImage: allFinished ? "arrow.uturn.backward.circle" : "checkmark.circle")
+            }
 
             Menu {
                 ForEach(Priority.allCases) { p in
