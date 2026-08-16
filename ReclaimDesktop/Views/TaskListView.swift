@@ -223,6 +223,19 @@ struct TaskListView: View {
         .overlay {
             if vm.filteredTasks.isEmpty { emptyState }
         }
+        // Focus-scoped shortcuts: only fire when the table has key focus, so
+        // they don't hijack typing in the search field or a sheet.
+        .onDeleteCommand {
+            guard !selection.isEmpty else { return }
+            pendingDeleteIDs = Array(selection)   // routes through the confirm dialog
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "eE"), phases: .down) { _ in
+            guard !selection.isEmpty else { return .ignored }
+            let ids = Array(selection)
+            Task { await vm.bulkComplete(ids: ids) }
+            selection.removeAll()
+            return .handled
+        }
     }
 
     @ViewBuilder
