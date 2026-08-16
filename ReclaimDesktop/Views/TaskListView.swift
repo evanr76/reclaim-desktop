@@ -20,9 +20,12 @@ struct TaskListView: View {
     @State private var editingID: Int?
     @State private var editText = ""
     @FocusState private var renameFieldFocused: Bool
-    // Pending inline rename, used to disambiguate a slow re-click (rename) from a
-    // fast double-click (edit sheet) on the already-selected row.
-    @State private var pendingRename: DispatchWorkItem?
+    // Inline-rename click tracking. A rename fires when a second click lands on
+    // the already-selected row within a Finder-like window after the first click:
+    // slower than a double-click, but no later than `renameMaxGap`.
+    @State private var clickReferenceID: Int?
+    @State private var clickReferenceTime = Date.distantPast
+    private static let renameMaxGap: TimeInterval = 1.2
 
     // Sort persistence.
     @AppStorage("sortColumn") private var sortColumnID = "due"
@@ -226,7 +229,6 @@ struct TaskListView: View {
         .contextMenu(forSelectionType: Int.self) { ids in
             rowContextMenu(for: ids)
         } primaryAction: { ids in
-            pendingRename?.cancel()   // a double-click opens the sheet, not a rename
             if let id = ids.first { editingTask = vm.task(withID: id) }
         }
         .overlay {
@@ -252,6 +254,28 @@ struct TaskListView: View {
             guard !finishedIDs.isEmpty else { return .ignored }
             Task { for id in finishedIDs { await vm.markIncomplete(id: id) } }
             return .handled
+        }
+        .onKeyPress(.return) {
+            guard editingID == nil, selection.count == 1,
+                  let id = selection.first, let task = vm.task(withID: id) else { return .ignored }
+            startRename(task)
+            return .handled
+        }
+        .onKeyPress(.space) {
+            guard editingID == nil, selection.count == 1,
+                  let id = selection.first, let task = vm.task(withID: id) else { return .ignored }
+            editingTask = task   // open the details/edit modal (was Enter)
+            return .handled
+        }
+        // Record when a row becomes the single selection — the "first click" that
+        // the slow-double-click rename window is measured from.
+        .onChange(of: selection) { _, newValue in
+            if newValue.count == 1, let id = newValue.first {
+                clickReferenceID = id
+                clickReferenceTime = Date()
+            } else {
+                clickReferenceID = nil
+            }
         }
     }
 
@@ -284,9 +308,12 @@ struct TaskListView: View {
                         .textFieldStyle(.plain)
                         .focused($renameFieldFocused)
                         .onSubmit { commitRename(task) }
-                        .onExitCommand { editingID = nil }   // Esc cancels
+                        // Esc: consume the key so the field editor doesn't swallow
+                        // it, and cancel (discard). onExitCommand is a fallback.
+                        .onKeyPress(.escape) { cancelRename(); return .handled }
+                        .onExitCommand { cancelRename() }
                         .onChange(of: renameFieldFocused) { _, focused in
-                            if !focused && editingID == task.id { commitRename(task) }
+                            if !focused { commitRename(task) }   // click-away commits
                         }
                         .onAppear { renameFieldFocused = true }
                 } else {
@@ -300,7 +327,7 @@ struct TaskListView: View {
                     if selection == [task.id] {
                         label
                             .contentShape(Rectangle())
-                            .simultaneousGesture(TapGesture().onEnded { scheduleRename(task) })
+                            .simultaneousGesture(TapGesture().onEnded { handleSelectedRowClick(task) })
                     } else {
                         label
                     }
@@ -314,25 +341,37 @@ struct TaskListView: View {
 
     // MARK: - Inline rename
 
-    /// Finder-style: a click on the already-selected row begins an inline rename,
-    /// but only after the double-click window passes — a fast double-click cancels
-    /// this (via `primaryAction`) and opens the edit sheet instead.
-    private func scheduleRename(_ task: ReclaimTask) {
-        pendingRename?.cancel()
-        let work = DispatchWorkItem {
-            if editingID == nil { startRename(task) }
+    /// Finder-style eligibility: a click on the already-selected row starts a
+    /// rename only when it lands after the double-click interval (so it isn't a
+    /// double-click, which opens the edit sheet) but within `renameMaxGap` of the
+    /// prior click. Otherwise it just re-arms the timer for the next click.
+    private func handleSelectedRowClick(_ task: ReclaimTask) {
+        let now = Date()
+        let gap = now.timeIntervalSince(clickReferenceTime)
+        if clickReferenceID == task.id, gap > NSEvent.doubleClickInterval, gap <= Self.renameMaxGap {
+            startRename(task)
+        } else {
+            clickReferenceID = task.id
+            clickReferenceTime = now
         }
-        pendingRename = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval + 0.06, execute: work)
     }
 
     private func startRename(_ task: ReclaimTask) {
-        pendingRename?.cancel()
+        clickReferenceID = nil
         editText = task.title ?? ""
         editingID = task.id
     }
 
+    /// Cancel the inline rename without saving. Clearing `editingID` first means
+    /// the focus-loss handler's `commitRename` no-ops (its guard fails).
+    private func cancelRename() {
+        editingID = nil
+    }
+
     private func commitRename(_ task: ReclaimTask) {
+        // Only the row still in edit mode commits — after a cancel, editingID is
+        // nil, so the focus-loss commit that follows is a no-op.
+        guard editingID == task.id else { return }
         let newTitle = editText.trimmingCharacters(in: .whitespacesAndNewlines)
         editingID = nil
         guard !newTitle.isEmpty, newTitle != (task.title ?? "") else { return }
