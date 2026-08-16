@@ -19,7 +19,6 @@ struct TaskListView: View {
     // Inline (Finder-style) rename state.
     @State private var editingID: Int?
     @State private var editText = ""
-    @FocusState private var renameFieldFocused: Bool
     // Inline-rename click tracking. A rename fires when a second click lands on
     // the already-selected row within a Finder-like window after the first click:
     // slower than a double-click, but no later than `renameMaxGap`.
@@ -255,16 +254,10 @@ struct TaskListView: View {
             Task { for id in finishedIDs { await vm.markIncomplete(id: id) } }
             return .handled
         }
-        .onKeyPress(.return) {
+        .onKeyPress(characters: CharacterSet(charactersIn: "rR"), phases: .down) { _ in
             guard editingID == nil, selection.count == 1,
                   let id = selection.first, let task = vm.task(withID: id) else { return .ignored }
             startRename(task)
-            return .handled
-        }
-        .onKeyPress(.space) {
-            guard editingID == nil, selection.count == 1,
-                  let id = selection.first, let task = vm.task(withID: id) else { return .ignored }
-            editingTask = task   // open the details/edit modal (was Enter)
             return .handled
         }
         // Record when a row becomes the single selection — the "first click" that
@@ -304,18 +297,11 @@ struct TaskListView: View {
                         .foregroundStyle(.secondary).font(.caption)
                 }
                 if editingID == task.id {
-                    TextField("Title", text: $editText)
-                        .textFieldStyle(.plain)
-                        .focused($renameFieldFocused)
-                        .onSubmit { commitRename(task) }
-                        // Esc: consume the key so the field editor doesn't swallow
-                        // it, and cancel (discard). onExitCommand is a fallback.
-                        .onKeyPress(.escape) { cancelRename(); return .handled }
-                        .onExitCommand { cancelRename() }
-                        .onChange(of: renameFieldFocused) { _, focused in
-                            if !focused { commitRename(task) }   // click-away commits
-                        }
-                        .onAppear { renameFieldFocused = true }
+                    InlineRenameField(
+                        text: $editText,
+                        onCommit: { newText in commitRename(task, newText: newText) },
+                        onCancel: { cancelRename() }
+                    )
                 } else {
                     let label = Text(task.displayTitle)
                         .lineLimit(1)
@@ -368,12 +354,10 @@ struct TaskListView: View {
         editingID = nil
     }
 
-    private func commitRename(_ task: ReclaimTask) {
-        // Only the row still in edit mode commits — after a cancel, editingID is
-        // nil, so the focus-loss commit that follows is a no-op.
+    private func commitRename(_ task: ReclaimTask, newText: String) {
         guard editingID == task.id else { return }
-        let newTitle = editText.trimmingCharacters(in: .whitespacesAndNewlines)
         editingID = nil
+        let newTitle = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newTitle.isEmpty, newTitle != (task.title ?? "") else { return }
         Task { await vm.updateTask(id: task.id, patch: ["title": newTitle]) }
     }
