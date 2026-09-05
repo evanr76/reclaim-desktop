@@ -260,6 +260,13 @@ struct TaskListView: View {
             startRename(task)
             return .handled
         }
+        .onKeyPress(characters: CharacterSet(charactersIn: "nN"), phases: .down) { _ in
+            guard editingID == nil, !selection.isEmpty else { return .ignored }
+            let ids = Array(selection)
+            let allUpNext = ids.allSatisfy { vm.task(withID: $0)?.onDeck == true }
+            Task { await vm.bulkSetUpNext(ids: ids, onDeck: !allUpNext) }
+            return .handled
+        }
         // Record when a row becomes the single selection — the "first click" that
         // the slow-double-click rename window is measured from.
         .onChange(of: selection) { _, newValue in
@@ -437,9 +444,9 @@ struct TaskListView: View {
         }
         let allUpNext = list.allSatisfy { vm.task(withID: $0)?.onDeck == true }
         if allUpNext {
-            Button("Remove from Up Next") { Task { await vm.bulkSetUpNext(ids: list, onDeck: false) } }
+            Button("Remove from Up Next  (N)") { Task { await vm.bulkSetUpNext(ids: list, onDeck: false) } }
         } else {
-            Button("Move to Up Next") { Task { await vm.bulkSetUpNext(ids: list, onDeck: true) } }
+            Button("Move to Up Next  (N)") { Task { await vm.bulkSetUpNext(ids: list, onDeck: true) } }
         }
         Divider()
         Button("Delete \(list.count)…  (⌫)", role: .destructive) {
