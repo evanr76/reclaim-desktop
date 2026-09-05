@@ -409,12 +409,12 @@ struct TaskListView: View {
         .keyboardShortcut("c", modifiers: .command)
         Divider()
         if list.count == 1, let task = vm.task(withID: list[0]) {
-            Button("Edit…") { editingTask = task }
-            Button("Rename") { startRename(task) }
+            Button("Edit…  (⏎)") { editingTask = task }
+            Button("Rename  (R)") { startRename(task) }
             if task.isFinished {
-                Button("Reopen") { Task { await vm.markIncomplete(id: task.id) } }
+                Button("Reopen  (U)") { Task { await vm.markIncomplete(id: task.id) } }
             } else {
-                Button("Mark Complete") {
+                Button("Mark Complete  (E)") {
                     advanceSelection(past: [task.id])
                     Task { await vm.markComplete(id: task.id) }
                 }
@@ -426,7 +426,7 @@ struct TaskListView: View {
             }
             Divider()
         }
-        Button("Mark \(list.count) Complete") {
+        Button("Mark \(list.count) Complete  (E)") {
             advanceSelection(past: Set(list))
             Task { await vm.bulkComplete(ids: list) }
         }
@@ -442,7 +442,7 @@ struct TaskListView: View {
             Button("Move to Up Next") { Task { await vm.bulkSetUpNext(ids: list, onDeck: true) } }
         }
         Divider()
-        Button("Delete \(list.count)…", role: .destructive) {
+        Button("Delete \(list.count)…  (⌫)", role: .destructive) {
             pendingDeleteIDs = list
         }
     }
