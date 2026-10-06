@@ -23,3 +23,4 @@ Packages/
 # Packaged disk images
 dist/
 .serena/
+.reclaim-migration-map.json

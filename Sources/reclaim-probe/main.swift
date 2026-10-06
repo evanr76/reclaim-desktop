@@ -55,6 +55,7 @@ guard let command = args.first else {
       dump-user                      Raw JSON of /api/users/current
       dump-tasks                     Raw JSON of the task-list request
       raw <path>                     Raw GET of an arbitrary path
+      migrate [--apply]              1.0 active tasks with no 2.0 twin -> Reclaim 2.0 (dry-run unless --apply)
       create <title> [P#] [hours]    Create a task (needs RECLAIM_PROBE_ALLOW_WRITES=1)
       complete <id> [<id>...]        Bulk complete (needs RECLAIM_PROBE_ALLOW_WRITES=1)
       priority <P#> <id> [<id>...]   Bulk set priority (needs writes flag)
@@ -115,6 +116,48 @@ func printTasks(_ tasks: [ReclaimTask]) {
     print("\n\(tasks.count) task(s).")
 }
 
+// MARK: - Part A migration helpers (1.0 -> 2.0)
+
+func normTitle(_ s: String?) -> String {
+    (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+}
+
+/// All 2.0 tasks as (numericId, title), walking the page cursor.
+func fetchAllV2(_ client: ReclaimAPIClient) async throws -> [(id: Int, title: String)] {
+    var out: [(Int, String)] = []
+    var after: String? = nil
+    repeat {
+        var q = [URLQueryItem(name: "count", value: "200")]
+        if let after { q.append(URLQueryItem(name: "after", value: after)) }
+        let (status, body) = try await client.rawRequest(method: "GET", path: "/api/reclaim-tasks/page", query: q, body: nil)
+        guard status == 200, let data = body.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = obj["items"] as? [[String: Any]] else {
+            throw ReclaimAPIError.network("2.0 page fetch failed (HTTP \(status))")
+        }
+        for it in items {
+            let idStr = (it["id"] as? String) ?? ""
+            let num = Int(idStr.split(separator: ":").last.map(String.init) ?? "") ?? -1
+            out.append((num, (it["title"] as? String) ?? ""))
+        }
+        after = ((obj["hasNextPage"] as? Bool) ?? false) ? (obj["last"] as? String) : nil
+    } while after != nil
+    return out
+}
+
+/// Build a `CreateReclaimTaskRequest` body from a 1.0 task.
+func v2CreateBody(_ t: ReclaimTask) -> [String: Any] {
+    let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+    var body: [String: Any] = ["title": t.displayTitle]
+    if let n = t.notes, !n.isEmpty { body["description"] = n }
+    if t.onDeck == true { body["priority"] = "PRIORITIZE" }           // Up Next -> PRIORITIZE (replaces P-level)
+    else if let p = t.priorityEnum?.rawValue { body["priority"] = p }
+    if let chunks = t.timeChunksRequired { body["estimateMinutes"] = chunks * 15 }
+    if let due = t.due { body["dueDate"] = df.string(from: due) }
+    if let sn = t.snoozeUntil, sn > Date() { body["startDate"] = df.string(from: sn) }  // snooze -> startDate
+    return body
+}
+
 do {
     switch command {
     case "whoami":
@@ -148,6 +191,53 @@ do {
             query: ReclaimAPIClient.taskListQuery(userId: user.id)
         )
         print("HTTP \(status)\n\(prettyJSON(body))")
+
+    case "migrate":
+        // Part A: push 1.0 active tasks that have no 2.0 twin into Reclaim 2.0.
+        // Dry-run by default; pass --apply (with RECLAIM_PROBE_ALLOW_WRITES=1) to create.
+        let apply = args.contains("--apply")
+        if apply { requireWrites() }
+        let user = try await client.currentUser()
+        let v1 = try await client.fetchTasks(userId: user.id)
+        let activeStatuses: Set<String> = ["NEW", "SCHEDULED", "IN_PROGRESS"]
+        let active = v1.filter { activeStatuses.contains(($0.status ?? "").uppercased()) }
+        let v2 = try await fetchAllV2(client)
+        let v2titles = Set(v2.map { normTitle($0.title) })
+        let orphans = active
+            .filter { !v2titles.contains(normTitle($0.title)) }
+            .sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }
+        print("1.0 active: \(active.count)   2.0 total: \(v2.count)   orphans to migrate: \(orphans.count)\n")
+        for t in orphans {
+            let b = v2CreateBody(t)
+            let pri = (b["priority"] as? String) ?? "—"
+            let mins = (b["estimateMinutes"] as? Int).map { "\($0)m" } ?? "—"
+            let due = (b["dueDate"] as? String) ?? "—"
+            print("• [\(pri)] \(mins) due \(due)  \(t.displayTitle)")
+        }
+        guard apply else {
+            print("\nDry run. Re-run with --apply and RECLAIM_PROBE_ALLOW_WRITES=1 to create these in Reclaim 2.0.")
+            break
+        }
+        var mapping: [[String: Any]] = []
+        var created = 0
+        for t in orphans {
+            let body = try JSONSerialization.data(withJSONObject: v2CreateBody(t))
+            let (status, resp) = try await client.rawRequest(method: "POST", path: "/api/reclaim-tasks", query: nil, body: body)
+            if (status == 200 || status == 201),
+               let data = resp.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let newId = obj["id"] as? String {
+                mapping.append(["v1Id": t.id, "v2Id": newId, "title": t.displayTitle])
+                created += 1
+                print("  created \(newId)  ← v1 \(t.id)")
+            } else {
+                print("  FAILED (HTTP \(status))  v1 \(t.id)  \(t.displayTitle)")
+            }
+        }
+        let mapData = try JSONSerialization.data(withJSONObject: mapping, options: [.prettyPrinted])
+        let mapPath = FileManager.default.currentDirectoryPath + "/.reclaim-migration-map.json"
+        try mapData.write(to: URL(fileURLWithPath: mapPath))
+        print("\nCreated \(created)/\(orphans.count). Mapping written to .reclaim-migration-map.json (do NOT delete the 1.0 tasks yet).")
 
     case "raw":
         guard args.count > 1 else { fail("Usage: raw <path[?query]>") }
