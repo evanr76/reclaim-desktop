@@ -150,8 +150,14 @@ do {
         print("HTTP \(status)\n\(prettyJSON(body))")
 
     case "raw":
-        guard args.count > 1 else { fail("Usage: raw <path>") }
-        let (status, body) = try await client.rawRequest(path: args[1])
+        guard args.count > 1 else { fail("Usage: raw <path[?query]>") }
+        let parts = args[1].split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let path = String(parts[0])
+        let query: [URLQueryItem]? = parts.count > 1 ? parts[1].split(separator: "&").map { pair in
+            let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return URLQueryItem(name: String(kv[0]), value: kv.count > 1 ? String(kv[1]) : nil)
+        } : nil
+        let (status, body) = try await client.rawRequest(path: path, query: query)
         print("HTTP \(status)\n\(prettyJSON(body))")
 
     case "req":
