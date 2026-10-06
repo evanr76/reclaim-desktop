@@ -24,6 +24,7 @@ struct SettingsView: View {
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     @AppStorage("refreshIntervalMinutes") private var refreshIntervalMinutes = 60
     @AppStorage("appearance") private var appearanceRaw = AppAppearance.system.rawValue
+    @AppStorage("reclaimMode") private var reclaimModeRaw = "v1"
     @AppStorage("notifyAtRisk") private var notifyAtRisk = true
     @AppStorage("notifyBlockStarting") private var notifyBlockStarting = true
     @AppStorage("notifyUpNext") private var notifyUpNext = true
@@ -50,6 +51,20 @@ struct SettingsView: View {
                     vm.configureAutoRefresh(intervalMinutes: minutes)
                 }
                 Text("Auto-refresh runs only while online.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Task API") {
+                Picker("Mode", selection: $reclaimModeRaw) {
+                    Text("1.0 (legacy /api/tasks)").tag("v1")
+                    Text("2.0 (reclaim-tasks)").tag("v2")
+                }
+                .onChange(of: reclaimModeRaw) { _, _ in
+                    Task { await vm.applyMode() }
+                }
+                Text(reclaimModeRaw == "v2"
+                     ? "Reads and writes Reclaim's current task store (matches the website). Timers, at-risk, category/color, and time schemes are unavailable; Up Next uses the PRIORITIZE priority."
+                     : "Legacy store. Reclaim's website and scheduler no longer read it, so new tasks here won't appear online.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

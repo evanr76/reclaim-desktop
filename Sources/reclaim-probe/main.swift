@@ -64,7 +64,8 @@ guard let command = args.first else {
     exit(0)
 }
 
-let client = ReclaimAPIClient(token: token)
+let probeMode = ReclaimMode(rawValue: env["RECLAIM_MODE"] ?? "v1") ?? .v1
+let client = ReclaimAPIClient(token: token, mode: probeMode)
 let writesAllowed = env["RECLAIM_PROBE_ALLOW_WRITES"] == "1"
 
 func requireWrites() {

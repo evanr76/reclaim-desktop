@@ -36,9 +36,13 @@ public final class ReclaimAPIClient: Sendable {
     private let token: String
     private let baseURL = URL(string: "https://api.app.reclaim.ai")!
     private let session: URLSession
+    /// Which task backend to talk to. `.v1` is the legacy `/api/tasks` surface;
+    /// `.v2` routes task reads/writes to `/api/reclaim-tasks` (see ReclaimV2.swift).
+    public let mode: ReclaimMode
 
-    public init(token: String, session: URLSession = .shared) {
+    public init(token: String, mode: ReclaimMode = .v1, session: URLSession = .shared) {
         self.token = token
+        self.mode = mode
         self.session = session
     }
 
@@ -53,6 +57,7 @@ public final class ReclaimAPIClient: Sendable {
     /// All of the user's tasks (every status), filtered to real tasks.
     /// Filtering into active/completed/overdue happens client-side.
     public func fetchTasks(userId: String) async throws -> [ReclaimTask] {
+        if mode == .v2 { return try await v2FetchTasks() }
         let data = try await request(method: "GET", path: "/api/tasks", query: Self.taskListQuery(userId: userId))
         let tasks = try decode([ReclaimTask].self, from: data)
         return tasks.filter { $0.isTask && !($0.deleted ?? false) }
@@ -70,6 +75,7 @@ public final class ReclaimAPIClient: Sendable {
         guard durationHours.isFinite, durationHours > 0 else {
             throw ReclaimAPIError.invalidInput("Duration must be a positive, finite number of hours.")
         }
+        if mode == .v2 { return try await v2Create(title: title, priority: priority, durationHours: durationHours, due: due) }
         let chunks = max(1, Int((durationHours * 4).rounded()))
         let minChunk = min(2, chunks)
         let maxChunk = max(chunks, minChunk)
@@ -102,6 +108,7 @@ public final class ReclaimAPIClient: Sendable {
 
     /// Available time schemes (custom hours). `GET /api/timeschemes`.
     public func fetchTimeSchemes() async throws -> [TimeScheme] {
+        if mode == .v2 { return [] }   // no time-scheme concept on the 2.0 task object
         let data = try await request(method: "GET", path: "/api/timeschemes")
         return try decode([TimeScheme].self, from: data)
     }
@@ -110,11 +117,13 @@ public final class ReclaimAPIClient: Sendable {
 
     /// Bulk mark complete → archives the tasks. `PATCH /api/tasks/batch/archive`.
     public func bulkComplete(ids: [Int]) async throws {
+        if mode == .v2 { try await v2Complete(ids: ids, completed: true); return }
         try await batch(method: "PATCH", path: "/api/tasks/batch/archive", ids: ids, patch: nil)
     }
 
     /// Bulk permanent delete. `DELETE /api/tasks/batch`.
     public func bulkDelete(ids: [Int]) async throws {
+        if mode == .v2 { try await v2Delete(ids: ids); return }
         try await batch(method: "DELETE", path: "/api/tasks/batch", ids: ids, patch: nil)
     }
 
@@ -129,6 +138,7 @@ public final class ReclaimAPIClient: Sendable {
     /// silently drops field patches (proven for `onDeck` and `due`), so a batch
     /// priority change didn't stick server-side and the next refetch reverted it.
     public func bulkReprioritize(ids: [Int], to priority: Priority) async throws {
+        if mode == .v2 { try await v2Reprioritize(ids: ids, to: priority); return }
         try await withThrowingTaskGroup(of: Void.self) { group in
             for id in ids {
                 group.addTask { try await self.updateTask(id: id, patch: ["priority": priority.rawValue]) }
@@ -142,6 +152,7 @@ public final class ReclaimAPIClient: Sendable {
     /// The `/api/tasks/batch` endpoint silently ignores `onDeck`, so this fans
     /// out single-task PATCHes (which do honor it) concurrently.
     public func bulkSetUpNext(ids: [Int], onDeck: Bool) async throws {
+        if mode == .v2 { try await v2SetUpNext(ids: ids, onDeck: onDeck); return }
         try await withThrowingTaskGroup(of: Void.self) { group in
             for id in ids {
                 group.addTask { try await self.updateTask(id: id, patch: ["onDeck": onDeck]) }
@@ -156,6 +167,7 @@ public final class ReclaimAPIClient: Sendable {
     /// clearing in particular is a no-op there — so this fans out single-task
     /// PATCHes, which do honor it.
     public func bulkReschedule(ids: [Int], due: Date?) async throws {
+        if mode == .v2 { try await v2Reschedule(ids: ids, due: due); return }
         let value: Any = due.map(Self.isoString) ?? NSNull()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for id in ids {
@@ -169,6 +181,7 @@ public final class ReclaimAPIClient: Sendable {
     ///
     /// Fanned out to single-task PATCHes for the same reason as `bulkReschedule`.
     public func bulkSnooze(ids: [Int], until: Date?) async throws {
+        if mode == .v2 { try await v2Snooze(ids: ids, until: until); return }
         let value: Any = until.map(Self.isoString) ?? NSNull()
         try await withThrowingTaskGroup(of: Void.self) { group in
             for id in ids {
@@ -182,6 +195,7 @@ public final class ReclaimAPIClient: Sendable {
 
     /// Patch a single task with the given fields. `PATCH /api/tasks/{id}`.
     public func updateTask(id: Int, patch: [String: Any]) async throws {
+        if mode == .v2 { try await v2Update(id: id, patch: patch); return }
         let body = try JSONSerialization.data(withJSONObject: patch, options: [])
         _ = try await request(method: "PATCH", path: "/api/tasks/\(id)", body: body)
     }
@@ -189,26 +203,31 @@ public final class ReclaimAPIClient: Sendable {
     /// Mark a single task complete via the planner endpoint (nicer than batch
     /// for one task; keeps scheduling side-effects). `POST /api/planner/done/task/{id}`.
     public func markComplete(id: Int) async throws {
+        if mode == .v2 { try await v2Patch(id: id, body: ["completed": true]); return }
         _ = try await request(method: "POST", path: "/api/planner/done/task/\(id)")
     }
 
     /// Reopen a completed/archived task. `POST /api/planner/unarchive/task/{id}`.
     public func markIncomplete(id: Int) async throws {
+        if mode == .v2 { try await v2Patch(id: id, body: ["completed": false]); return }
         _ = try await request(method: "POST", path: "/api/planner/unarchive/task/\(id)")
     }
 
     /// Start a work session on a task. `POST /api/planner/start/task/{id}`.
     public func startTask(id: Int) async throws {
+        if mode == .v2 { throw ReclaimAPIError.invalidInput("Timers aren't available in 2.0 mode yet.") }
         _ = try await request(method: "POST", path: "/api/planner/start/task/\(id)")
     }
 
     /// Stop the active work session. `POST /api/planner/stop/task/{id}`.
     public func stopTask(id: Int) async throws {
+        if mode == .v2 { throw ReclaimAPIError.invalidInput("Timers aren't available in 2.0 mode yet.") }
         _ = try await request(method: "POST", path: "/api/planner/stop/task/\(id)")
     }
 
     /// Auto-prioritize all tasks by due date. `PATCH /api/tasks/reindex-by-due`.
     public func reindexByDue() async throws {
+        if mode == .v2 { throw ReclaimAPIError.invalidInput("Auto-prioritize isn't available in 2.0 mode.") }
         _ = try await request(method: "PATCH", path: "/api/tasks/reindex-by-due")
     }
 

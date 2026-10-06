@@ -78,9 +78,22 @@ final class TaskListViewModel {
     private let pathMonitor = NWPathMonitor()
     private var refreshTask: Task<Void, Never>?
 
+    /// Which task backend to talk to, read from the shared setting (default v1).
+    static func storedMode() -> ReclaimMode {
+        ReclaimMode(rawValue: UserDefaults.standard.string(forKey: "reclaimMode") ?? "v1") ?? .v1
+    }
+
+    /// Rebuild the client for the current mode and reload. Call after the toggle flips.
+    func applyMode() async {
+        guard let token = KeychainStore.readToken() else { return }
+        client = ReclaimAPIClient(token: token, mode: Self.storedMode())
+        user = nil
+        await loadTasks()
+    }
+
     init() {
         if let token = KeychainStore.readToken() {
-            client = ReclaimAPIClient(token: token)
+            client = ReclaimAPIClient(token: token, mode: Self.storedMode())
             isConfigured = true
         }
         // Refresh when the Siri/Shortcuts/Spotlight intent adds a task in-process.
@@ -183,7 +196,7 @@ final class TaskListViewModel {
             errorMessage = "Please enter your Reclaim API key."
             return
         }
-        let candidate = ReclaimAPIClient(token: trimmed)
+        let candidate = ReclaimAPIClient(token: trimmed, mode: Self.storedMode())
         isBusy = true
         defer { isBusy = false }
         do {

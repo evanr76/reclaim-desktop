@@ -39,6 +39,7 @@ let package = Package(
                 "Models/TimeScheme.swift",
                 "Models/Notifications.swift",
                 "Services/ReclaimAPIClient.swift",
+                "Services/ReclaimV2.swift",
             ]
         ),
         .executableTarget(
