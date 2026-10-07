@@ -36,7 +36,7 @@ struct TaskListView: View {
         ("priority", KeyPathComparator(\.sortPriorityRank)),
         ("due", KeyPathComparator(\.sortDue)),
         ("duration", KeyPathComparator(\.sortDurationChunks)),
-        ("created", KeyPathComparator(\.sortCreated)),
+        ("id", KeyPathComparator(\.id)),
         ("status", KeyPathComparator(\.sortStatusLabel)),
     ]
 
@@ -64,7 +64,7 @@ struct TaskListView: View {
         ("priority", "Priority"),
         ("due", "Due"),
         ("duration", "Duration"),
-        ("created", "Created"),
+        ("id", "ID"),
         ("status", "Status"),
     ]
 
@@ -202,11 +202,11 @@ struct TaskListView: View {
             }
             .width(80)
             .customizationID("duration")
-            TableColumn("Created", value: \.sortCreated) { task in
-                Text(Fmt.day(task.created)).foregroundStyle(.secondary)
+            TableColumn("ID", value: \.id) { task in
+                Text("\(task.id)").foregroundStyle(.secondary).monospacedDigit()
             }
-            .width(min: 90, ideal: 120)
-            .customizationID("created")
+            .width(min: 70, ideal: 90)
+            .customizationID("id")
             TableColumn("Status", value: \.sortStatusLabel) { task in
                 Text(task.statusEnum?.label ?? (task.status ?? "—"))
                     .font(.caption).foregroundStyle(.secondary)
